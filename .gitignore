@@ -1,0 +1,11 @@
+# Archivos de datos de negocio (obras, consultas OSA, resultados y logs) -
+# no se versionan: son pesados, cambian cada trimestre y contienen data
+# comercial que no debe vivir en el historial de git.
+*.xlsx
+*.xls
+!ejemplo*.xlsx
+
+__pycache__/
+*.pyc
+.venv/
+venv/
