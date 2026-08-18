@@ -75,17 +75,36 @@ Rutas de archivos personalizadas: `python recon_osa.py --osa "ruta/consulta.xlsx
 
 ## Logica de decision
 
+Principio rector: **ante la duda, no sugerir**. Es preferible dejar una
+obra sin identificar que sugerir -o peor, auto-llenar- una coincidencia
+que solo comparte una palabra de titulo o un apellido comun. Con esta
+logica, sobre las ~37.000 filas de la consulta 1Q 2026: 566 quedan
+identificadas automaticamente y solo 583 pasan a revision manual (antes
+de endurecer los filtros, la revision manual llegaba a mas de 8.000
+filas, la mayoria coincidencias sin ninguna relacion real).
+
 1. **Coincidencia de titulo**: exacta (normalizada: mayusculas, sin tildes,
    sin puntuacion) primero; si no hay exacta, aproximada (rapidfuzz,
    bloqueada por palabras del titulo para que sea rapida sobre ~20k obras).
+   Un titulo aproximado **debe ademas compartir la mayoria de sus palabras**
+   con el candidato (no solo un score de caracteres alto): dos titulos
+   cortos como "DOS FLORES" y "LOS DOS" pueden parecer similares letra por
+   letra sin tener ninguna relacion real, asi que un score de caracteres
+   por si solo no basta.
 2. **Confirmacion de autor**: un titulo igual o parecido NO es suficiente
    por si solo — hay titulos genericos o tradicionales que distintos
-   compositores repiten. Por eso **siempre** se exige que el autor de la
-   OSA coincida (score >= 85, y con margen claro sobre el segundo candidato)
-   antes de llenar `EDITOR`/`%` automaticamente. Si el autor de la OSA viene
-   "No identificado" o no coincide con confianza, la fila pasa a revision
-   (manual en la GUI, o comentario sugerido en la version de consola) en
-   vez de asumirse.
+   compositores repiten (o coinciden por azar). Por eso:
+   - Para **auto-llenar** `EDITOR`/`%` siempre se exige que el autor de la
+     OSA coincida con confianza (score >= 85, y con margen claro sobre el
+     segundo candidato).
+   - Para **siquiera sugerir** una revision manual, tambien hay un piso
+     minimo de coincidencia de autor — un titulo exacto con un autor sin
+     ninguna relacion suele ser una obra homonima distinta, no la misma
+     obra, y no vale la pena mostrarla.
+   - Si el autor de la OSA viene "No identificado", no hay señal de autor
+     para comparar: solo se sugiere revision cuando el titulo es exacto,
+     inequivoco en nuestra base (una sola obra con ese titulo) y no es
+     demasiado generico/corto.
 3. **Obras con varios coautores**: en la base de Edimusica una misma obra
    puede tener varias filas (una por coautor), agrupadas por `COD ANT`. El
    `%` que se llena es la suma de los porcentajes de todos los coautores
@@ -100,10 +119,14 @@ Rutas de archivos personalizadas: `python recon_osa.py --osa "ruta/consulta.xlsx
 
 ## Ajustar el umbral de revision
 
-Los umbrales estan al inicio de `matching_core.py` (`AUTHOR_CONFIRM_MIN`,
-`AUTHOR_MARGIN_MIN`, `TIER1_FUZZY_TITLE_MIN`, `FUZZY_CANDIDATE_CUTOFF`). Si
-despues de revisar varias corridas ven que ciertos patrones de "REVISAR"
-siempre resultan correctos, se pueden ajustar para automatizarlos.
+Los umbrales estan al inicio de `matching_core.py`: `AUTHOR_CONFIRM_MIN` y
+`AUTHOR_MARGIN_MIN` (para auto-llenar), `REVISAR_AUTHOR_FLOOR` (piso minimo
+de coincidencia de autor para siquiera sugerir), `FUZZY_CANDIDATE_CUTOFF` y
+`TITLE_WORD_OVERLAP_MIN` (que tan parecido/solapado debe ser un titulo no
+exacto para considerarlo candidato), `TIER1_FUZZY_TITLE_MIN` (para
+auto-llenar con titulo no exacto). Si despues de revisar varias corridas
+ven que ciertos patrones de "REVISAR" siempre resultan correctos, se
+pueden relajar; si aparecen falsos positivos, endurecerlos mas.
 
 ## Sobre el .exe
 

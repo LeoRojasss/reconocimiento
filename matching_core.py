@@ -33,10 +33,14 @@ COL_COMENTARIOS = 11    # K - COMENTARIOS
 DB_SHEET = "Sheet1"
 
 # --- Umbrales de decision -----------------------------------------------
-FUZZY_CANDIDATE_CUTOFF = 82      # score minimo de titulo para considerar candidato
+# Criterio general (ver docstring de match_title_author): ante la duda, NO
+# sugerir. Mejor una obra sin identificar que una coincidencia enganosa.
+FUZZY_CANDIDATE_CUTOFF = 88      # score minimo de titulo para considerar candidato
+TITLE_WORD_OVERLAP_MIN = 0.75    # fraccion de palabras del titulo corto que deben aparecer en el largo
 TIER1_FUZZY_TITLE_MIN = 95       # score de titulo (no exacto) para auto-llenar
-AUTHOR_CONFIRM_MIN = 85          # similitud de autor para confirmar desambiguacion
+AUTHOR_CONFIRM_MIN = 85          # similitud de autor para confirmar desambiguacion (AUTO)
 AUTHOR_MARGIN_MIN = 12           # margen minimo entre mejor y segundo candidato
+REVISAR_AUTHOR_FLOOR = 50        # por debajo de esto, ni se sugiere para revisar
 MAX_DOC_FREQ_FOR_BLOCKING = 450  # palabras muy comunes no sirven para bloqueo
 MIN_WORD_LEN_FOR_BLOCKING = 3
 
@@ -192,15 +196,66 @@ def best_group_by_author(rows, candidate_indices, osa_authors_norm):
     return scored
 
 
+def significant_words(title_norm):
+    return {w for w in title_norm.split() if len(w) >= MIN_WORD_LEN_FOR_BLOCKING and w not in STOPWORDS}
+
+
+def word_overlap_ratio(words_a, words_b):
+    """Fraccion de las palabras del titulo mas corto que aparecen (exactas)
+    en el titulo mas largo. Sirve para descartar coincidencias que solo
+    comparten una palabra suelta (p.ej. "DOS FLORES" vs "LOS DOS") aunque
+    el score de caracteres (Levenshtein) las haga ver parecidas: dos
+    titulos cortos comparten muchas letras por azar.
+    """
+    if not words_a or not words_b:
+        return 0.0
+    shorter, longer = (words_a, words_b) if len(words_a) <= len(words_b) else (words_b, words_a)
+    matched = sum(1 for w in shorter if w in longer)
+    return matched / len(shorter)
+
+
+def title_is_distinctive(title_norm):
+    """Un titulo de una sola palabra corta ("FLOR", "AMOR") es demasiado
+    generico para identificar una obra sin ninguna otra señal (autor). Se
+    exige 2+ palabras significativas, o una sola palabra larga.
+    """
+    words = significant_words(title_norm)
+    if len(words) >= 2:
+        return True
+    return len(title_norm) >= 10
+
+
 def match_title_author(match_index, titulo_raw, autor_raw):
-    """Devuelve el mejor match (dict) o None si no hay ningun candidato."""
+    """Devuelve el mejor match (dict) o None si no hay ningun candidato lo
+    bastante confiable como para sugerirlo siquiera.
+
+    Principio rector (pedido explicitamente: "razonamiento muy critico"):
+    ante la duda, NO sugerir. Es preferible dejar una obra sin identificar
+    que sugerir -o peor, auto-llenar- una coincidencia que solo comparte
+    una palabra de titulo o un apellido comun. Por eso hay dos filtros que
+    se aplican SIEMPRE, incluso antes de pensar en "REVISAR":
+      - titulo: si no es exacto, se exige solapamiento real de palabras
+        (no solo similitud de caracteres).
+      - autor: si el autor de la OSA es conocido, un score de autor muy
+        bajo descarta el candidato por completo (no se sugiere ni para
+        revisar) aunque el titulo sea exacto - un titulo exacto pero con
+        un autor sin ninguna relacion suele ser una obra homonima
+        distinta, no la misma obra.
+    """
     rows = match_index.rows
     title_norm = normalize(titulo_raw)
     if not title_norm:
         return None
 
-    osa_authors_norm = [a for a in (normalize(x) for x in split_authors(autor_raw)) if a]
     unidentified = is_unidentified(autor_raw)
+    # Si el autor OSA es "No identificado" no hay ninguna señal real de
+    # autor: se deja la lista vacia en vez de comparar el texto literal
+    # "no identificado" contra los autores de la base (eso producia un
+    # "score de autor" bajo pero completamente ficticio, engañoso al
+    # mostrarlo en la revision).
+    osa_authors_norm = [] if unidentified else [
+        a for a in (normalize(x) for x in split_authors(autor_raw)) if a
+    ]
 
     exact_candidates = match_index.exact_index.get(title_norm, [])
 
@@ -209,21 +264,25 @@ def match_title_author(match_index, titulo_raw, autor_raw):
         top_score, _, top_idxs = scored_groups[0]
         second_score = scored_groups[1][0] if len(scored_groups) > 1 else -1
 
-        # El titulo exacto NO basta por si solo: titulos genericos/tradicionales
-        # se repiten entre autores distintos. Siempre se exige confirmar el
-        # autor (aun cuando solo haya un candidato), salvo que el autor OSA
-        # venga "no identificado", caso en el que se manda a revision manual
-        # con el autor sugerido en vez de asumirlo.
-        if (not unidentified and top_score >= AUTHOR_CONFIRM_MIN
-                and (top_score - second_score) >= AUTHOR_MARGIN_MIN):
+        if unidentified:
+            # Sin autor de referencia, la unica evidencia es el titulo: solo
+            # vale la pena sugerirlo si es exacto, inequivoco (una sola obra
+            # en toda la base con ese titulo) y no es un titulo generico.
+            if len(scored_groups) == 1 and title_is_distinctive(title_norm):
+                tier = "REVISAR"
+            else:
+                return None
+        elif top_score >= AUTHOR_CONFIRM_MIN and (top_score - second_score) >= AUTHOR_MARGIN_MIN:
             tier = "AUTO"
-        else:
+        elif top_score >= REVISAR_AUTHOR_FLOOR:
             tier = "REVISAR"
+        else:
+            return None
 
         return {
             "tier": tier,
             "title_score": 100,
-            "author_score": round(top_score, 1),
+            "author_score": "N/A" if unidentified else round(top_score, 1),
             "summary": summarize_group(rows, top_idxs),
             "match_type": "EXACTO",
         }
@@ -235,8 +294,18 @@ def match_title_author(match_index, titulo_raw, autor_raw):
     choices = {i: rows[i]["titulo_norm"] for i in candidate_ids}
     results = process.extract(
         title_norm, choices, scorer=fuzz.token_sort_ratio,
-        limit=8, score_cutoff=FUZZY_CANDIDATE_CUTOFF,
+        limit=15, score_cutoff=FUZZY_CANDIDATE_CUTOFF,
     )
+    if not results:
+        return None
+
+    # Filtro de solapamiento de palabras: descarta candidatos que solo
+    # deben su score de caracteres a compartir una palabra suelta.
+    query_words = significant_words(title_norm)
+    results = [
+        r for r in results
+        if word_overlap_ratio(query_words, significant_words(rows[r[2]]["titulo_norm"])) >= TITLE_WORD_OVERLAP_MIN
+    ]
     if not results:
         return None
 
@@ -247,18 +316,27 @@ def match_title_author(match_index, titulo_raw, autor_raw):
     top_score, _, top_idxs = scored_groups[0]
     second_score = scored_groups[1][0] if len(scored_groups) > 1 else -1
 
-    auto_ok = (
-        best_title_score >= TIER1_FUZZY_TITLE_MIN
-        and not unidentified
-        and top_score >= AUTHOR_CONFIRM_MIN
-        and (top_score - second_score) >= AUTHOR_MARGIN_MIN
-    )
-    tier = "AUTO" if auto_ok else "REVISAR"
+    if unidentified:
+        # Titulo aproximado (no exacto) + sin autor de referencia es la
+        # combinacion mas riesgosa: se exige el titulo casi identico,
+        # inequivoco y distintivo antes de sugerirlo.
+        if (best_title_score >= TIER1_FUZZY_TITLE_MIN and len(scored_groups) == 1
+                and title_is_distinctive(title_norm)):
+            tier = "REVISAR"
+        else:
+            return None
+    elif (best_title_score >= TIER1_FUZZY_TITLE_MIN and top_score >= AUTHOR_CONFIRM_MIN
+            and (top_score - second_score) >= AUTHOR_MARGIN_MIN):
+        tier = "AUTO"
+    elif top_score >= REVISAR_AUTHOR_FLOOR:
+        tier = "REVISAR"
+    else:
+        return None
 
     return {
         "tier": tier,
         "title_score": round(best_title_score, 1),
-        "author_score": round(top_score, 1),
+        "author_score": "N/A" if unidentified else round(top_score, 1),
         "summary": summarize_group(rows, top_idxs),
         "match_type": "APROXIMADO",
     }
