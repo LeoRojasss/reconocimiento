@@ -41,6 +41,7 @@ TIER1_FUZZY_TITLE_MIN = 95       # score de titulo (no exacto) para auto-llenar
 AUTHOR_CONFIRM_MIN = 85          # similitud de autor para confirmar desambiguacion (AUTO)
 AUTHOR_MARGIN_MIN = 12           # margen minimo entre mejor y segundo candidato
 REVISAR_AUTHOR_FLOOR = 50        # por debajo de esto, ni se sugiere para revisar
+AUTHOR_FLOOR_PENALTY_PER_COAUTHOR = 15  # sube el piso por cada coautor extra a comparar
 MAX_DOC_FREQ_FOR_BLOCKING = 450  # palabras muy comunes no sirven para bloqueo
 MIN_WORD_LEN_FOR_BLOCKING = 3
 
@@ -215,14 +216,44 @@ def word_overlap_ratio(words_a, words_b):
 
 
 def title_is_distinctive(title_norm):
-    """Un titulo de una sola palabra corta ("FLOR", "AMOR") es demasiado
-    generico para identificar una obra sin ninguna otra señal (autor). Se
-    exige 2+ palabras significativas, o una sola palabra larga.
+    """Un titulo corto/generico ("LOCO", "AZUL", "SIN TI", "TE QUIERO") es
+    demasiado comun para identificar una obra sin una señal de autor fuerte:
+    en un catalogo de ~20.000 obras es muy probable que existan varias
+    canciones distintas con el mismo titulo generico. Se usa el largo total
+    de la frase (no solo las palabras "significativas" sin stopwords, que
+    dejaba pasar frases cortas como "EN MI X" con una sola palabra de
+    contenido) como proxy de que tan especifico es el titulo.
     """
-    words = significant_words(title_norm)
-    if len(words) >= 2:
+    total_words = len(title_norm.split())
+    if total_words >= 3:
         return True
-    return len(title_norm) >= 10
+    if total_words == 2:
+        return len(title_norm) >= 10
+    return len(title_norm) >= 12
+
+
+def effective_author_floor(title_norm, group_size):
+    """Piso minimo de score de autor para siquiera sugerir un candidato
+    como REVISAR (por debajo, se descarta por completo).
+
+    Sube en dos casos, y toma el mas exigente de los dos (no se suman,
+    para no volverlo imposible de alcanzar):
+      - titulo generico: sin un titulo distintivo, un titulo exacto no es
+        evidencia fuerte por si solo (hay homonimos), asi que se exige el
+        mismo nivel de autor que para auto-llenar.
+      - obra con varios coautores: al comparar el autor de la OSA contra
+        cada coautor y quedarse con el mejor resultado, entre mas
+        coautores tenga la obra mas probable es que UNO de ellos parezca
+        coincidir por pura casualidad (apellido comun, nombre compuesto
+        compartido) aunque no sea la misma obra. Se compenso subiendo el
+        piso segun cuantos coautores hay que comparar.
+    """
+    floor = REVISAR_AUTHOR_FLOOR
+    if not title_is_distinctive(title_norm):
+        floor = max(floor, AUTHOR_CONFIRM_MIN)
+    if group_size > 1:
+        floor = max(floor, REVISAR_AUTHOR_FLOOR + AUTHOR_FLOOR_PENALTY_PER_COAUTHOR * (group_size - 1))
+    return min(floor, 90)
 
 
 def match_title_author(match_index, titulo_raw, autor_raw):
@@ -274,7 +305,7 @@ def match_title_author(match_index, titulo_raw, autor_raw):
                 return None
         elif top_score >= AUTHOR_CONFIRM_MIN and (top_score - second_score) >= AUTHOR_MARGIN_MIN:
             tier = "AUTO"
-        elif top_score >= REVISAR_AUTHOR_FLOOR:
+        elif top_score >= effective_author_floor(title_norm, len(top_idxs)):
             tier = "REVISAR"
         else:
             return None
@@ -328,7 +359,7 @@ def match_title_author(match_index, titulo_raw, autor_raw):
     elif (best_title_score >= TIER1_FUZZY_TITLE_MIN and top_score >= AUTHOR_CONFIRM_MIN
             and (top_score - second_score) >= AUTHOR_MARGIN_MIN):
         tier = "AUTO"
-    elif top_score >= REVISAR_AUTHOR_FLOOR:
+    elif top_score >= effective_author_floor(title_norm, len(top_idxs)):
         tier = "REVISAR"
     else:
         return None

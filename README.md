@@ -79,7 +79,7 @@ Principio rector: **ante la duda, no sugerir**. Es preferible dejar una
 obra sin identificar que sugerir -o peor, auto-llenar- una coincidencia
 que solo comparte una palabra de titulo o un apellido comun. Con esta
 logica, sobre las ~37.000 filas de la consulta 1Q 2026: 566 quedan
-identificadas automaticamente y solo 583 pasan a revision manual (antes
+identificadas automaticamente y solo ~395 pasan a revision manual (antes
 de endurecer los filtros, la revision manual llegaba a mas de 8.000
 filas, la mayoria coincidencias sin ninguna relacion real).
 
@@ -112,6 +112,15 @@ filas, la mayoria coincidencias sin ninguna relacion real).
    en el archivo de la OSA (distintos interpretes), se llena el mismo %
    total en cada aparicion — no se modifica ni se reparte el archivo de la
    OSA.
+   - Al validar el autor se compara contra **cada** coautor y se toma el
+     mejor resultado — pero entre mas coautores tenga una obra, mas
+     probable es que uno de ellos "coincida" por pura casualidad (apellido
+     comun, nombre compuesto compartido) sin ser en realidad la misma
+     obra. Por eso el piso minimo para sugerir una revision sube segun
+     cuantos coautores hay que comparar (`AUTHOR_FLOOR_PENALTY_PER_COAUTHOR`
+     en `matching_core.py`), y sube tambien si el titulo es generico/corto
+     (`title_is_distinctive`) — un titulo como "LOCO" o "SIN TI" es muy
+     probable que corresponda a varias canciones distintas.
 4. Las filas que ya tenian `EDITOR` o `%` llenos no se tocan.
 5. En la GUI, las filas dudosas que comparten el mismo titulo+autor se
    revisan una sola vez y la decision se aplica a todas (p. ej. la misma
