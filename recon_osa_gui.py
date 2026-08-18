@@ -21,9 +21,9 @@ import time
 import webbrowser
 from collections import deque
 from pathlib import Path
-from tkinter import Tk, StringVar, filedialog, messagebox
-from tkinter import ttk
+from tkinter import StringVar, filedialog, messagebox
 
+import customtkinter as ctk
 import openpyxl
 
 import matching_core as mc
@@ -39,33 +39,92 @@ def app_dir():
 SESSIONS_DIR = app_dir() / "sesiones_revision"
 SESSIONS_DIR.mkdir(exist_ok=True)
 
-FONT_TITLE = ("Segoe UI", 18, "bold")
-FONT_SUBTITLE = ("Segoe UI", 12, "bold")
-FONT_NORMAL = ("Segoe UI", 11)
-FONT_BIG = ("Segoe UI", 22, "bold")
-FONT_BTN = ("Segoe UI", 13, "bold")
-
 
 def session_path_for(osa_path: Path) -> Path:
     return SESSIONS_DIR / f"{osa_path.stem}.json"
 
 
-class App(Tk):
+# ---------------------------------------------------------------------------
+# Paleta y tipografia
+# ---------------------------------------------------------------------------
+
+BG = "#F5F6FA"
+CARD = "#FFFFFF"
+BORDER = "#E5E7EB"
+
+PRIMARY = "#4F46E5"
+PRIMARY_HOVER = "#4338CA"
+PRIMARY_LIGHT = "#EEF2FF"
+
+SUCCESS = "#16A34A"
+SUCCESS_HOVER = "#15803D"
+SUCCESS_LIGHT = "#ECFDF5"
+
+DANGER = "#DC2626"
+DANGER_HOVER = "#B91C1C"
+DANGER_LIGHT = "#FEF2F2"
+
+WARNING = "#D97706"
+WARNING_LIGHT = "#FFFBEB"
+
+MUTED = "#6B7280"
+MUTED_LIGHT = "#F3F4F6"
+TEXT = "#111827"
+TEXT_SECONDARY = "#4B5563"
+
+F = "Segoe UI"
+FONT_APP_TITLE = (F, 16, "bold")
+FONT_APP_SUB = (F, 11)
+FONT_H1 = (F, 20, "bold")
+FONT_H2 = (F, 14, "bold")
+FONT_BODY = (F, 12)
+FONT_BODY_BOLD = (F, 12, "bold")
+FONT_SMALL = (F, 10)
+FONT_CARD_TITLE = (F, 21, "bold")
+FONT_BTN = (F, 13, "bold")
+FONT_BTN_BIG = (F, 14, "bold")
+FONT_STAT_NUM = (F, 30, "bold")
+FONT_MONO = ("Consolas", 10)
+
+
+def card(parent, **kwargs):
+    opts = dict(fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER)
+    opts.update(kwargs)
+    return ctk.CTkFrame(parent, **opts)
+
+
+def badge(parent, text, fg, bg):
+    return ctk.CTkLabel(parent, text=text, font=FONT_SMALL, text_color=fg,
+                         fg_color=bg, corner_radius=8, padx=10, pady=3)
+
+
+def h_button(parent, text, command, fg=PRIMARY, hover=PRIMARY_HOVER, text_color="white",
+             font=FONT_BTN, height=40, corner_radius=10, border_width=0, border_color=None,
+             state="normal"):
+    return ctk.CTkButton(
+        parent, text=text, command=command, fg_color=fg, hover_color=hover,
+        text_color=text_color, font=font, height=height, corner_radius=corner_radius,
+        border_width=border_width, border_color=border_color or fg, state=state,
+    )
+
+
+def ghost_button(parent, text, command, text_color=TEXT_SECONDARY, hover=MUTED_LIGHT, font=FONT_BODY_BOLD):
+    return ctk.CTkButton(
+        parent, text=text, command=command, fg_color="transparent", hover_color=hover,
+        text_color=text_color, font=font, height=32, corner_radius=8,
+    )
+
+
+class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Reconocimiento OSA - Edimusica")
-        self.geometry("1020x760")
-        self.minsize(900, 700)
+        ctk.set_appearance_mode("light")
+        ctk.set_default_color_theme("blue")
 
-        style = ttk.Style(self)
-        try:
-            style.theme_use("vista")
-        except Exception:
-            pass
-        style.configure("Accept.TButton", font=FONT_BTN, foreground="#0a6b1f")
-        style.configure("Reject.TButton", font=FONT_BTN, foreground="#a30f0f")
-        style.configure("Skip.TButton", font=FONT_BTN)
-        style.configure("Big.TButton", font=FONT_BTN)
+        self.title("Reconocimiento OSA - Edimusica")
+        self.geometry("1080x780")
+        self.minsize(960, 700)
+        self.configure(fg_color=BG)
 
         self.osa_path = None
         self.db_path = None
@@ -78,19 +137,57 @@ class App(Tk):
         self.session_file = None
         self.queue = deque()
         self.history = []
+        self._dots_job = None
+        self._dots_n = 0
 
-        self.container = ttk.Frame(self, padding=16)
-        self.container.pack(fill="both", expand=True)
+        self._build_header()
+
+        self.content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        self.content.pack(fill="both", expand=True, padx=28, pady=(20, 24))
 
         self.show_inicio()
 
     # -----------------------------------------------------------------
-    # utilidades comunes
+    # chrome / utilidades comunes
     # -----------------------------------------------------------------
 
+    def _build_header(self):
+        header = ctk.CTkFrame(self, fg_color=PRIMARY, corner_radius=0, height=60)
+        header.pack(fill="x", side="top")
+        header.pack_propagate(False)
+
+        inner = ctk.CTkFrame(header, fg_color="transparent")
+        inner.pack(side="left", padx=24, pady=8)
+        ctk.CTkLabel(inner, text="🎵", font=(F, 22), text_color="white").pack(side="left", padx=(0, 10))
+        text_col = ctk.CTkFrame(inner, fg_color="transparent")
+        text_col.pack(side="left")
+        ctk.CTkLabel(text_col, text="Reconocimiento OSA", font=FONT_APP_TITLE,
+                     text_color="white", anchor="w").pack(anchor="w")
+        ctk.CTkLabel(text_col, text="Catalogo Edimusica", font=FONT_APP_SUB,
+                     text_color="#DDD9FF", anchor="w").pack(anchor="w")
+
     def clear(self):
-        for w in self.container.winfo_children():
+        self._stop_dots()
+        for w in self.content.winfo_children():
             w.destroy()
+
+    def _start_dots(self, base_text, target_var):
+        self._dots_n = 0
+
+        def tick():
+            self._dots_n = (self._dots_n + 1) % 4
+            target_var.set(base_text + "." * self._dots_n)
+            self._dots_job = self.after(400, tick)
+
+        tick()
+
+    def _stop_dots(self):
+        if self._dots_job:
+            try:
+                self.after_cancel(self._dots_job)
+            except Exception:
+                pass
+            self._dots_job = None
 
     def save_session(self):
         if not self.session_file:
@@ -112,39 +209,54 @@ class App(Tk):
 
     def show_inicio(self):
         self.clear()
-        ttk.Label(self.container, text="Cruce CONSULTA OSA vs catalogo Edimusica",
-                  font=FONT_TITLE).pack(anchor="w", pady=(0, 4))
-        ttk.Label(
-            self.container,
-            text="Identifica que obras de la consulta de la OSA administra Edimusica,\n"
-                 "y te deja revisar visualmente los casos dudosos antes de generar el archivo final.",
-            font=FONT_NORMAL, foreground="#555",
-        ).pack(anchor="w", pady=(0, 24))
+
+        ctk.CTkLabel(self.content, text="Vamos a identificar tus obras",
+                     font=FONT_H1, text_color=TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(
+            self.content,
+            text="Elige el archivo de la OSA y tu catalogo de obras. El resto es automatico.",
+            font=FONT_BODY, text_color=MUTED, anchor="w",
+        ).pack(anchor="w", pady=(2, 22))
 
         self.osa_var = StringVar(value=str(self.osa_path) if self.osa_path else "")
         self.db_var = StringVar(value=str(self.db_path) if self.db_path else "")
 
-        self._file_row("Archivo CONSULTA OSA (.xlsx):", self.osa_var, self._pick_osa)
-        self._file_row("Archivo Obras Edimusica (.xlsx):", self.db_var, self._pick_db)
+        self._file_card("📄", "Archivo CONSULTA OSA", "Formato .xlsx que envia la OSA cada trimestre",
+                         self.osa_var, self._pick_osa)
+        self._file_card("🗂️", "Archivo Obras Edimusica", "Tu catalogo propio: TITULO, NOMAUTOR, % ...",
+                         self.db_var, self._pick_db)
 
-        self.btn_analizar = ttk.Button(self.container, text="Analizar archivos",
-                                        style="Big.TButton", command=self._start_analysis)
-        self.btn_analizar.pack(anchor="w", pady=(24, 8))
+        self.btn_analizar = h_button(self.content, "Analizar archivos  →", self._start_analysis,
+                                      height=48, font=FONT_BTN_BIG, state="disabled")
+        self.btn_analizar.pack(anchor="w", pady=(20, 8))
 
         self.status_var = StringVar(value="")
-        ttk.Label(self.container, textvariable=self.status_var, font=FONT_NORMAL,
-                  foreground="#555").pack(anchor="w")
+        ctk.CTkLabel(self.content, textvariable=self.status_var, font=FONT_BODY,
+                     text_color=MUTED, anchor="w").pack(anchor="w")
 
-        self.progress = ttk.Progressbar(self.container, mode="indeterminate", length=400)
-        self._update_analyze_btn_state()
+    def _file_card(self, icon, title, subtitle, var, command):
+        c = card(self.content)
+        c.pack(fill="x", pady=8)
+        inner = ctk.CTkFrame(c, fg_color="transparent")
+        inner.pack(fill="x", padx=18, pady=16)
 
-    def _file_row(self, label, var, command):
-        row = ttk.Frame(self.container)
-        row.pack(fill="x", pady=6)
-        ttk.Label(row, text=label, font=FONT_NORMAL, width=32, anchor="w").pack(side="left")
-        entry = ttk.Entry(row, textvariable=var, state="readonly", width=60)
-        entry.pack(side="left", padx=8)
-        ttk.Button(row, text="Elegir...", command=command).pack(side="left")
+        top = ctk.CTkFrame(inner, fg_color="transparent")
+        top.pack(fill="x")
+        ctk.CTkLabel(top, text=icon, font=(F, 20)).pack(side="left", padx=(0, 10))
+        col = ctk.CTkFrame(top, fg_color="transparent")
+        col.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(col, text=title, font=FONT_H2, text_color=TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(col, text=subtitle, font=FONT_SMALL, text_color=MUTED, anchor="w").pack(anchor="w")
+        h_button(top, "Elegir archivo", command, fg=CARD, hover=PRIMARY_LIGHT, text_color=PRIMARY,
+                 font=FONT_BODY_BOLD, height=34, corner_radius=8, border_width=1).pack(side="right")
+
+        path_box = ctk.CTkFrame(inner, fg_color=MUTED_LIGHT, corner_radius=8)
+        path_box.pack(fill="x", pady=(12, 0))
+        path_lbl = ctk.CTkLabel(path_box, textvariable=var, font=FONT_SMALL, text_color=TEXT_SECONDARY,
+                                 anchor="w", justify="left")
+        path_lbl.pack(fill="x", padx=10, pady=8)
+        if not var.get():
+            var.set("Sin seleccionar")
 
     def _pick_osa(self):
         path = filedialog.askopenfilename(
@@ -174,9 +286,7 @@ class App(Tk):
 
     def _start_analysis(self):
         self.btn_analizar.configure(state="disabled")
-        self.status_var.set("Analizando... esto puede tardar unos segundos.")
-        self.progress.pack(anchor="w", pady=8)
-        self.progress.start(12)
+        self._start_dots("Analizando", self.status_var)
         threading.Thread(target=self._run_analysis, daemon=True).start()
 
     def _run_analysis(self):
@@ -192,15 +302,13 @@ class App(Tk):
         self.after(0, self._analysis_done, match_index, wb, ws, scan_results, review_groups)
 
     def _analysis_failed(self, message):
-        self.progress.stop()
-        self.progress.pack_forget()
+        self._stop_dots()
         self.btn_analizar.configure(state="normal")
         self.status_var.set("")
         messagebox.showerror("Error al analizar", message)
 
     def _analysis_done(self, match_index, wb, ws, scan_results, review_groups):
-        self.progress.stop()
-        self.progress.pack_forget()
+        self._stop_dots()
         self.match_index = match_index
         self.wb = wb
         self.ws = ws
@@ -250,42 +358,55 @@ class App(Tk):
         self.clear()
         c = self._counts()
 
-        ttk.Label(self.container, text="Resultado del analisis", font=FONT_TITLE).pack(anchor="w", pady=(0, 16))
+        ctk.CTkLabel(self.content, text="Resultado del analisis", font=FONT_H1,
+                     text_color=TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(self.content, text=self.osa_path.name if self.osa_path else "",
+                     font=FONT_BODY, text_color=MUTED, anchor="w").pack(anchor="w", pady=(2, 20))
 
-        info = ttk.Frame(self.container)
-        info.pack(fill="x", pady=4)
+        grid = ctk.CTkFrame(self.content, fg_color="transparent")
+        grid.pack(fill="x")
+        for i in range(4):
+            grid.columnconfigure(i, weight=1, uniform="stat")
 
-        def stat(text, value, color="#222"):
-            row = ttk.Frame(info)
-            row.pack(fill="x", pady=3)
-            ttk.Label(row, text=text, font=FONT_NORMAL, width=48, anchor="w").pack(side="left")
-            ttk.Label(row, text=str(value), font=FONT_SUBTITLE, foreground=color).pack(side="left")
+        self._stat_tile(grid, 0, "✅", c["auto"], "Identificadas\nautomaticamente", SUCCESS, SUCCESS_LIGHT)
+        self._stat_tile(grid, 1, "🔍", c["pendientes"], "Por revisar\n(dudosas)", WARNING, WARNING_LIGHT)
+        self._stat_tile(grid, 2, "➖", c["sin_match"], "Sin coincidencia\nen tu catalogo", MUTED, MUTED_LIGHT)
+        self._stat_tile(grid, 3, "🔒", c["ya_lleno"], "Ya tenian datos\n(no se tocan)", MUTED, MUTED_LIGHT)
 
-        stat("Identificadas automaticamente con alta confianza:", c["auto"], "#0a6b1f")
-        stat("Coincidencias dudosas por revisar (agrupadas):", c["pendientes"], "#b8860b")
-        stat("  -> filas de la OSA que cubren esos grupos:", c["filas_revisar"])
-        stat("  -> ya revisadas antes (aceptadas / rechazadas):", f"{c['aceptados']} / {c['rechazados']}")
-        stat("Sin ninguna coincidencia en nuestro catalogo:", c["sin_match"])
-        stat("Filas que ya tenian EDITOR/% llenos (no se tocan):", c["ya_lleno"])
+        if c["decididos"] > 0:
+            info = ctk.CTkFrame(self.content, fg_color=PRIMARY_LIGHT, corner_radius=10)
+            info.pack(fill="x", pady=(16, 0))
+            ctk.CTkLabel(
+                info, text=f"ℹ️  Ya revisaste {c['decididos']} de {c['total_grupos']} casos dudosos "
+                           f"({c['aceptados']} aceptados, {c['rechazados']} rechazados) — "
+                           f"quedan {c['pendientes']} por decidir.",
+                font=FONT_BODY, text_color=PRIMARY, anchor="w", justify="left",
+            ).pack(anchor="w", padx=14, pady=10)
 
-        btns = ttk.Frame(self.container)
-        btns.pack(anchor="w", pady=28)
+        btns = ctk.CTkFrame(self.content, fg_color="transparent")
+        btns.pack(fill="x", pady=(26, 0))
 
         if c["pendientes"] > 0:
-            ttk.Button(
-                btns, text=f"Revisar coincidencias dudosas ({c['pendientes']} pendientes)",
-                style="Big.TButton", command=self.show_juego,
-            ).pack(anchor="w", pady=4)
+            h_button(btns, f"🔍  Revisar coincidencias dudosas  ({c['pendientes']})",
+                     self.show_juego, height=48, font=FONT_BTN_BIG).pack(anchor="w", pady=4)
         else:
-            ttk.Label(self.container, text="No quedan coincidencias dudosas por revisar.",
-                      font=FONT_NORMAL, foreground="#0a6b1f").pack(anchor="w")
+            done = ctk.CTkFrame(self.content, fg_color=SUCCESS_LIGHT, corner_radius=10)
+            done.pack(fill="x", pady=(0, 4))
+            ctk.CTkLabel(done, text="🎉  No quedan coincidencias dudosas por revisar.",
+                         font=FONT_BODY_BOLD, text_color=SUCCESS_HOVER).pack(anchor="w", padx=14, pady=10)
 
-        ttk.Button(
-            btns, text="Generar archivo final para la OSA ahora",
-            command=self.show_exportar,
-        ).pack(anchor="w", pady=4)
+        h_button(btns, "Generar archivo final para la OSA", self.show_exportar,
+                 fg=CARD, hover=MUTED_LIGHT, text_color=TEXT, font=FONT_BODY_BOLD,
+                 height=40, border_width=1, border_color=BORDER).pack(anchor="w", pady=6)
 
-        ttk.Button(btns, text="<- Elegir otros archivos", command=self.show_inicio).pack(anchor="w", pady=(16, 0))
+        ghost_button(btns, "←  Elegir otros archivos", self.show_inicio).pack(anchor="w", pady=(10, 0))
+
+    def _stat_tile(self, parent, col, icon, number, label, color, tint):
+        c = card(parent, fg_color=tint, border_color=tint)
+        c.grid(row=0, column=col, sticky="nsew", padx=6)
+        ctk.CTkLabel(c, text=icon, font=(F, 18)).pack(pady=(16, 0))
+        ctk.CTkLabel(c, text=str(number), font=FONT_STAT_NUM, text_color=color).pack()
+        ctk.CTkLabel(c, text=label, font=FONT_SMALL, text_color=TEXT_SECONDARY, justify="center").pack(pady=(0, 16))
 
     # -----------------------------------------------------------------
     # Pantalla 3: juego de revision
@@ -296,62 +417,75 @@ class App(Tk):
         self.queue = deque(i for i, g in enumerate(self.review_groups) if g["key"] not in self.decisions)
         self.history = []
 
-        top = ttk.Frame(self.container)
+        top = ctk.CTkFrame(self.content, fg_color="transparent")
         top.pack(fill="x")
-        ttk.Label(top, text="Es la misma obra?", font=FONT_TITLE).pack(side="left")
-        ttk.Button(top, text="Terminar por ahora -> exportar", command=self.show_exportar).pack(side="right")
+        ctk.CTkLabel(top, text="¿Es la misma obra?", font=FONT_H1, text_color=TEXT).pack(side="left")
+        ghost_button(top, "Terminar por ahora  →  exportar", self.show_exportar).pack(side="right")
 
-        self.progress_label = ttk.Label(self.container, font=FONT_NORMAL, foreground="#555")
-        self.progress_label.pack(anchor="w", pady=(4, 2))
-        self.progress_bar = ttk.Progressbar(self.container, mode="determinate")
-        self.progress_bar.pack(fill="x", pady=(0, 16))
+        self.progress_label = ctk.CTkLabel(self.content, font=FONT_BODY, text_color=MUTED, anchor="w")
+        self.progress_label.pack(anchor="w", pady=(10, 4))
+        self.progress_bar = ctk.CTkProgressBar(self.content, height=10, corner_radius=6,
+                                                progress_color=PRIMARY, fg_color=MUTED_LIGHT)
+        self.progress_bar.pack(fill="x", pady=(0, 18))
 
-        # Nota: se empaqueta con fill="x" (sin expand) a proposito: si en vez
-        # se usara expand=True aqui, esta tarjeta absorberia todo el espacio
-        # extra al maximizar la ventana y empujaria los botones fuera del
-        # area visible. Con fill="x" el layout queda estable a cualquier
-        # tamano de ventana; el espacio sobrante simplemente queda en blanco
-        # debajo de los controles.
-        cards = ttk.Frame(self.container)
-        cards.pack(fill="x", pady=(0, 16))
-        cards.columnconfigure(0, weight=1)
-        cards.columnconfigure(1, weight=1)
+        cards = ctk.CTkFrame(self.content, fg_color="transparent")
+        cards.pack(fill="x")
+        cards.columnconfigure(0, weight=1, uniform="cards")
+        cards.columnconfigure(1, weight=1, uniform="cards")
 
-        osa_box = ttk.LabelFrame(cards, text="Reporta la OSA", padding=16)
+        osa_box = card(cards)
         osa_box.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        bd_box = ttk.LabelFrame(cards, text="Posible coincidencia en catalogo Edimusica", padding=16)
+        bd_box = card(cards)
         bd_box.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
-        self.lbl_osa_titulo = ttk.Label(osa_box, font=FONT_BIG, wraplength=380, justify="left")
-        self.lbl_osa_titulo.pack(anchor="w", pady=(0, 10))
-        self.lbl_osa_autor = ttk.Label(osa_box, font=FONT_NORMAL, wraplength=380, justify="left")
+        osa_inner = ctk.CTkFrame(osa_box, fg_color="transparent")
+        osa_inner.pack(fill="both", expand=True, padx=20, pady=18)
+        badge(osa_inner, "REPORTA LA OSA", "#1D4ED8", "#DBEAFE").pack(anchor="w")
+        self.lbl_osa_titulo = ctk.CTkLabel(osa_inner, font=FONT_CARD_TITLE, text_color=TEXT,
+                                            anchor="w", justify="left", wraplength=400)
+        self.lbl_osa_titulo.pack(anchor="w", pady=(12, 14))
+        self.lbl_osa_autor = ctk.CTkLabel(osa_inner, font=FONT_BODY, text_color=TEXT_SECONDARY,
+                                           anchor="w", justify="left", wraplength=400)
         self.lbl_osa_autor.pack(anchor="w", pady=2)
-        self.lbl_osa_interprete = ttk.Label(osa_box, font=FONT_NORMAL, wraplength=380, justify="left", foreground="#555")
+        self.lbl_osa_interprete = ctk.CTkLabel(osa_inner, font=FONT_BODY, text_color=MUTED,
+                                                anchor="w", justify="left", wraplength=400)
         self.lbl_osa_interprete.pack(anchor="w", pady=2)
-        self.lbl_osa_filas = ttk.Label(osa_box, font=("Segoe UI", 10, "italic"), foreground="#777")
-        self.lbl_osa_filas.pack(anchor="w", pady=(10, 0))
+        self.lbl_osa_filas = ctk.CTkLabel(osa_inner, font=FONT_SMALL, text_color=MUTED,
+                                           fg_color=MUTED_LIGHT, corner_radius=8, anchor="w")
+        self.lbl_osa_filas.pack(anchor="w", pady=(14, 0), ipadx=4, ipady=2)
 
-        self.lbl_bd_titulo = ttk.Label(bd_box, font=FONT_BIG, wraplength=380, justify="left")
-        self.lbl_bd_titulo.pack(anchor="w", pady=(0, 10))
-        self.lbl_bd_autor = ttk.Label(bd_box, font=FONT_NORMAL, wraplength=380, justify="left")
+        bd_inner = ctk.CTkFrame(bd_box, fg_color="transparent")
+        bd_inner.pack(fill="both", expand=True, padx=20, pady=18)
+        badge(bd_inner, "BASE EDIMUSICA", PRIMARY, PRIMARY_LIGHT).pack(anchor="w")
+        self.lbl_bd_titulo = ctk.CTkLabel(bd_inner, font=FONT_CARD_TITLE, text_color=TEXT,
+                                           anchor="w", justify="left", wraplength=400)
+        self.lbl_bd_titulo.pack(anchor="w", pady=(12, 14))
+        self.lbl_bd_autor = ctk.CTkLabel(bd_inner, font=FONT_BODY, text_color=TEXT_SECONDARY,
+                                          anchor="w", justify="left", wraplength=400)
         self.lbl_bd_autor.pack(anchor="w", pady=2)
-        self.lbl_bd_pct = ttk.Label(bd_box, font=FONT_SUBTITLE, foreground="#0a6b1f")
-        self.lbl_bd_pct.pack(anchor="w", pady=(8, 2))
-        self.lbl_bd_score = ttk.Label(bd_box, font=("Segoe UI", 10), foreground="#777")
+        self.lbl_bd_pct = ctk.CTkLabel(bd_inner, font=FONT_BODY_BOLD, text_color=SUCCESS_HOVER, anchor="w")
+        self.lbl_bd_pct.pack(anchor="w", pady=(10, 2))
+        self.lbl_bd_score = ctk.CTkLabel(bd_inner, font=FONT_SMALL, text_color=MUTED,
+                                          anchor="w", justify="left", wraplength=400)
         self.lbl_bd_score.pack(anchor="w", pady=(10, 0))
 
-        btns = ttk.Frame(self.container)
-        btns.pack(fill="x", pady=24)
-        ttk.Button(btns, text="❌  NO coincide  (←)", style="Reject.TButton",
-                   command=self.decide_no).pack(side="left", expand=True, fill="x", padx=6, ipady=14)
-        ttk.Button(btns, text="⏭  Revisar despues  (espacio)", style="Skip.TButton",
-                   command=self.decide_skip).pack(side="left", expand=True, fill="x", padx=6, ipady=14)
-        ttk.Button(btns, text="✅  SI, es la misma obra  (→)", style="Accept.TButton",
-                   command=self.decide_yes).pack(side="left", expand=True, fill="x", padx=6, ipady=14)
+        btns = ctk.CTkFrame(self.content, fg_color="transparent")
+        btns.pack(fill="x", pady=(22, 6))
+        btns.columnconfigure(0, weight=1, uniform="act")
+        btns.columnconfigure(1, weight=1, uniform="act")
+        btns.columnconfigure(2, weight=1, uniform="act")
 
-        bottom = ttk.Frame(self.container)
+        h_button(btns, "✕   No coincide   (←)", self.decide_no, fg=DANGER, hover=DANGER_HOVER,
+                 height=58, font=FONT_BTN_BIG, corner_radius=14).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        h_button(btns, "⏭   Despues   (espacio)", self.decide_skip, fg=CARD, hover=MUTED_LIGHT,
+                 text_color=TEXT, height=58, font=FONT_BTN_BIG, corner_radius=14,
+                 border_width=1, border_color=BORDER).grid(row=0, column=1, sticky="ew", padx=6)
+        h_button(btns, "✓   Si, es la misma   (→)", self.decide_yes, fg=SUCCESS, hover=SUCCESS_HOVER,
+                 height=58, font=FONT_BTN_BIG, corner_radius=14).grid(row=0, column=2, sticky="ew", padx=(6, 0))
+
+        bottom = ctk.CTkFrame(self.content, fg_color="transparent")
         bottom.pack(fill="x")
-        ttk.Button(bottom, text="Deshacer ultima decision (Ctrl+Z)", command=self.undo).pack(side="left")
+        ghost_button(bottom, "↩  Deshacer ultima decision  (Ctrl+Z)", self.undo).pack(anchor="w")
 
         self.bind("<Left>", lambda e: self.decide_no())
         self.bind("<Right>", lambda e: self.decide_yes())
@@ -365,11 +499,11 @@ class App(Tk):
         total = len(self.review_groups)
         decididos = total - len(self.queue)
         self.progress_label.configure(
-            text=f"{decididos} de {total} decisiones tomadas "
-                 f"({sum(1 for v in self.decisions.values() if v=='SI')} aceptadas, "
-                 f"{sum(1 for v in self.decisions.values() if v=='NO')} rechazadas)"
+            text=f"{decididos} de {total} decisiones tomadas   ·   "
+                 f"{sum(1 for v in self.decisions.values() if v=='SI')} aceptadas   ·   "
+                 f"{sum(1 for v in self.decisions.values() if v=='NO')} rechazadas"
         )
-        self.progress_bar.configure(maximum=max(total, 1), value=decididos)
+        self.progress_bar.set(decididos / total if total else 0)
 
         if not self.queue:
             self.show_resumen()
@@ -382,20 +516,20 @@ class App(Tk):
         summary = match["summary"]
 
         self.lbl_osa_titulo.configure(text=sample["titulo"])
-        self.lbl_osa_autor.configure(text=f"Autor: {sample['autor'] or '(sin dato)'}")
-        self.lbl_osa_interprete.configure(text=f"Interprete: {sample['interprete'] or '(sin dato)'}")
+        self.lbl_osa_autor.configure(text=f"✍️  {sample['autor'] or '(sin dato)'}")
+        self.lbl_osa_interprete.configure(text=f"🎤  {sample['interprete'] or '(sin dato)'}")
         n_rows = len(g["rows"])
         self.lbl_osa_filas.configure(
-            text=f"Aplica a {n_rows} fila(s) de la consulta OSA" if n_rows > 1
-            else "Aplica a 1 fila de la consulta OSA"
+            text=f"  Aplica a {n_rows} filas de la consulta OSA  " if n_rows > 1
+            else "  Aplica a 1 fila de la consulta OSA  "
         )
 
         self.lbl_bd_titulo.configure(text=summary["titulo"])
-        self.lbl_bd_autor.configure(text="Autor(es): " + mc.format_authors(summary["authors"]))
-        self.lbl_bd_pct.configure(text=f"% que administraria Edimusica: {summary['total_pct']:.2f}%")
+        self.lbl_bd_autor.configure(text="✍️  " + mc.format_authors(summary["authors"]))
+        self.lbl_bd_pct.configure(text=f"💰  Edimusica administraria: {summary['total_pct']:.2f}%")
         self.lbl_bd_score.configure(
-            text=f"Tipo de match: {match['match_type']}  |  score titulo: {match['title_score']}  |  "
-                 f"score autor: {match['author_score']}  |  codigo: {summary['codant']}"
+            text=f"Tipo de match: {match['match_type']}   ·   score titulo: {match['title_score']}   ·   "
+                 f"score autor: {match['author_score']}   ·   codigo: {summary['codant']}"
         )
 
     def _decide(self, value):
@@ -449,38 +583,39 @@ class App(Tk):
             self.unbind(seq)
 
         c = self._counts()
-        ttk.Label(self.container, text="Generar archivo final", font=FONT_TITLE).pack(anchor="w", pady=(0, 16))
-        ttk.Label(
-            self.container,
+        ctk.CTkLabel(self.content, text="Generar archivo final", font=FONT_H1,
+                     text_color=TEXT, anchor="w").pack(anchor="w")
+
+        info_card = card(self.content)
+        info_card.pack(fill="x", pady=(18, 0))
+        ctk.CTkLabel(
+            info_card,
             text="Se creara una COPIA del archivo de la OSA (el original no se modifica),\n"
                  "llenando EDITOR y % solo en las obras identificadas automaticamente o\n"
-                 "confirmadas por ti. Las que quedaron pendientes o rechazadas no se tocan.",
-            font=FONT_NORMAL, foreground="#555", justify="left",
-        ).pack(anchor="w", pady=(0, 20))
+                 "confirmadas por ti. Lo pendiente o rechazado no se toca.",
+            font=FONT_BODY, text_color=TEXT_SECONDARY, justify="left", anchor="w",
+        ).pack(anchor="w", padx=18, pady=16)
 
-        ttk.Label(self.container, text=f"Se llenaran (automaticas + confirmadas): "
-                                        f"{c['auto'] + c['aceptados']} coincidencias",
-                  font=FONT_SUBTITLE, foreground="#0a6b1f").pack(anchor="w", pady=2)
+        chips = ctk.CTkFrame(self.content, fg_color="transparent")
+        chips.pack(fill="x", pady=(14, 0))
+        badge(chips, f"✅  Se llenaran: {c['auto'] + c['aceptados']}", SUCCESS_HOVER, SUCCESS_LIGHT).pack(side="left")
         quedan_pendientes = max(c["total_grupos"] - c["aceptados"] - c["rechazados"], 0)
-        ttk.Label(self.container, text=f"Quedaran pendientes de revisar (sin llenar): {quedan_pendientes}",
-                  font=FONT_NORMAL, foreground="#b8860b").pack(anchor="w", pady=2)
+        badge(chips, f"🔍  Quedaran pendientes: {quedan_pendientes}", WARNING, WARNING_LIGHT).pack(side="left", padx=10)
 
         self.export_status = StringVar(value="")
-        ttk.Label(self.container, textvariable=self.export_status, font=FONT_NORMAL).pack(anchor="w", pady=(20, 4))
-        self.export_progress = ttk.Progressbar(self.container, mode="indeterminate", length=400)
+        ctk.CTkLabel(self.content, textvariable=self.export_status, font=FONT_BODY,
+                     text_color=MUTED, anchor="w").pack(anchor="w", pady=(20, 4))
 
-        btns = ttk.Frame(self.container)
-        btns.pack(anchor="w", pady=20)
-        self.btn_exportar = ttk.Button(btns, text="Generar archivo para la OSA",
-                                        style="Big.TButton", command=self._start_export)
+        btns = ctk.CTkFrame(self.content, fg_color="transparent")
+        btns.pack(fill="x", pady=10)
+        self.btn_exportar = h_button(btns, "Generar archivo para la OSA", self._start_export,
+                                      height=48, font=FONT_BTN_BIG)
         self.btn_exportar.pack(side="left")
-        ttk.Button(btns, text="<- Volver a revisar", command=self.show_resumen).pack(side="left", padx=12)
+        ghost_button(btns, "←  Volver a revisar", self.show_resumen).pack(side="left", padx=16)
 
     def _start_export(self):
         self.btn_exportar.configure(state="disabled")
-        self.export_status.set("Generando archivo...")
-        self.export_progress.pack(anchor="w", pady=6)
-        self.export_progress.start(12)
+        self._start_dots("Generando archivo", self.export_status)
         threading.Thread(target=self._run_export, daemon=True).start()
 
     def _run_export(self):
@@ -512,37 +647,46 @@ class App(Tk):
         self.after(0, self._export_done, output_path, log_path, counters)
 
     def _export_failed(self, message):
-        self.export_progress.stop()
-        self.export_progress.pack_forget()
+        self._stop_dots()
         self.btn_exportar.configure(state="normal")
         self.export_status.set("")
         messagebox.showerror("Error al generar el archivo", message)
 
     def _export_done(self, output_path, log_path, counters):
-        self.export_progress.stop()
-        self.export_progress.pack_forget()
-        self.export_status.set("Listo.")
+        self._stop_dots()
         self.clear()
 
-        ttk.Label(self.container, text="Archivo generado", font=FONT_TITLE,
-                  foreground="#0a6b1f").pack(anchor="w", pady=(0, 16))
-        ttk.Label(self.container, text=f"Archivo para enviar a la OSA:\n{output_path}",
-                  font=FONT_NORMAL, justify="left").pack(anchor="w", pady=6)
-        ttk.Label(self.container, text=f"Log de auditoria:\n{log_path}",
-                  font=FONT_NORMAL, justify="left").pack(anchor="w", pady=6)
+        ctk.CTkLabel(self.content, text="✅  ¡Archivo generado!", font=FONT_H1,
+                     text_color=SUCCESS_HOVER, anchor="w").pack(anchor="w", pady=(0, 18))
 
-        resumen = (
-            f"Automaticas: {counters['auto']}   |   Confirmadas a mano: {counters['confirmado']}   |   "
-            f"Rechazadas: {counters['rechazado']}   |   Pendientes: {counters['pendiente']}   |   "
-            f"Sin coincidencia: {counters['sin_match']}"
-        )
-        ttk.Label(self.container, text=resumen, font=("Segoe UI", 10), foreground="#555").pack(anchor="w", pady=(16, 0))
+        paths_card = card(self.content)
+        paths_card.pack(fill="x")
+        inner = ctk.CTkFrame(paths_card, fg_color="transparent")
+        inner.pack(fill="x", padx=18, pady=16)
+        ctk.CTkLabel(inner, text="Archivo para enviar a la OSA", font=FONT_SMALL, text_color=MUTED,
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(inner, text=str(output_path), font=FONT_MONO, text_color=TEXT,
+                     anchor="w", wraplength=980, justify="left").pack(anchor="w", pady=(2, 12))
+        ctk.CTkLabel(inner, text="Log de auditoria", font=FONT_SMALL, text_color=MUTED,
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(inner, text=str(log_path), font=FONT_MONO, text_color=TEXT,
+                     anchor="w", wraplength=980, justify="left").pack(anchor="w", pady=(2, 0))
 
-        btns = ttk.Frame(self.container)
-        btns.pack(anchor="w", pady=24)
-        ttk.Button(btns, text="Abrir carpeta", command=lambda: webbrowser.open(str(output_path.parent))).pack(side="left")
-        ttk.Button(btns, text="Volver al resumen", command=self.show_resumen).pack(side="left", padx=12)
-        ttk.Button(btns, text="Empezar con otro archivo", command=self.show_inicio).pack(side="left", padx=12)
+        chips = ctk.CTkFrame(self.content, fg_color="transparent")
+        chips.pack(fill="x", pady=(18, 0))
+        badge(chips, f"Automaticas: {counters['auto']}", SUCCESS_HOVER, SUCCESS_LIGHT).pack(side="left")
+        badge(chips, f"Confirmadas: {counters['confirmado']}", SUCCESS_HOVER, SUCCESS_LIGHT).pack(side="left", padx=8)
+        badge(chips, f"Rechazadas: {counters['rechazado']}", DANGER, DANGER_LIGHT).pack(side="left")
+        badge(chips, f"Pendientes: {counters['pendiente']}", WARNING, WARNING_LIGHT).pack(side="left", padx=8)
+        badge(chips, f"Sin coincidencia: {counters['sin_match']}", MUTED, MUTED_LIGHT).pack(side="left")
+
+        btns = ctk.CTkFrame(self.content, fg_color="transparent")
+        btns.pack(fill="x", pady=26)
+        h_button(btns, "📂  Abrir carpeta", lambda: webbrowser.open(str(output_path.parent)),
+                 height=42).pack(side="left")
+        h_button(btns, "Volver al resumen", self.show_resumen, fg=CARD, hover=MUTED_LIGHT,
+                 text_color=TEXT, height=42, border_width=1, border_color=BORDER).pack(side="left", padx=10)
+        ghost_button(btns, "Empezar con otro archivo", self.show_inicio).pack(side="left")
 
 
 if __name__ == "__main__":
