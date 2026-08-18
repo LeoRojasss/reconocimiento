@@ -1,18 +1,19 @@
 # reconocimiento
 
-Script para cruzar la "CONSULTA OSA" (relacion de obras usadas en
+Herramienta para cruzar la "CONSULTA OSA" (relacion de obras usadas en
 establecimientos, formato Excel que envia la OSA cada trimestre) contra el
-catalogo propio de obras de Edimusica, e identificar automaticamente que
-obras administramos, con que porcentaje, y sugerir autores para las obras
-marcadas como "No identificado".
+catalogo propio de obras de Edimusica: identifica automaticamente que obras
+administramos, con que porcentaje, deja revisar visualmente los casos
+dudosos, y genera el archivo final para devolver a la OSA.
 
 ## Por que existe
 
 Cada trimestre la OSA envia un Excel de ~30-40 mil filas para identificar
-manualmente titulo por titulo. Este script automatiza el cruce usando
-coincidencia exacta y difusa (fuzzy matching) de titulo + autor contra nuestra
-base de obras, dejando el trabajo manual solo para los casos realmente
-ambiguos.
+manualmente titulo por titulo. Esta herramienta automatiza el cruce usando
+coincidencia exacta y difusa (fuzzy matching) de titulo + autor contra
+nuestra base de obras, y deja el trabajo manual solo para los casos
+realmente ambiguos — revisados uno por uno en una interfaz visual tipo
+"aceptar / rechazar", en vez de en Excel.
 
 ## Instalacion
 
@@ -20,39 +21,57 @@ ambiguos.
 pip install -r requirements.txt
 ```
 
-## Uso
+## Uso — interfaz grafica (recomendado)
 
-Coloca en esta carpeta:
-- El archivo que envia la OSA (por defecto se busca `CONSULTA OSA_1Q 2026.xlsx`)
-- Nuestra base de obras (`Obras_edimusica.xlsx`), con columnas
-  `TITULO, NOMAUTOR, CODIGO, COD ANT, PORCENTAJE`
+```
+python recon_osa_gui.py
+```
+
+O, si no quieres usar la terminal, doble clic en **`Abrir Reconocimiento
+OSA.bat`**.
+
+Flujo dentro de la app:
+
+1. Elegir el archivo de la OSA y el archivo de obras de Edimusica.
+2. Se analizan automaticamente. Se muestra cuantas obras quedaron
+   identificadas con alta confianza y cuantas quedaron dudosas.
+3. Las dudosas se revisan una por una en la pantalla de "juego": se ve la
+   obra tal como la reporto la OSA junto a la posible coincidencia en
+   nuestra base (titulo, autor(es), % y el score de similitud), y se
+   decide con los botones o con las flechas del teclado (← no coincide,
+   → si coincide, espacio para revisar despues, Ctrl+Z para deshacer). El
+   progreso se guarda automaticamente en `sesiones_revision/`, asi que se
+   puede cerrar el programa y continuar despues sin perder lo ya decidido.
+4. Al generar el archivo final, se modifica **solo** lo identificado
+   (automatico + confirmado a mano): se llenan `EDITOR` y `%`. Lo
+   rechazado y lo que quedo pendiente no se toca. El archivo original de
+   la OSA nunca se modifica — siempre se crea una copia nueva.
+
+## Uso — linea de comandos (sin revision visual)
 
 ```
 python recon_osa.py
 ```
 
-Genera dos archivos con timestamp (el archivo original de la OSA nunca se
-modifica):
+Llena solo las coincidencias de alta confianza; las dudosas quedan
+anotadas como sugerencia en `COMENTARIOS` (sin llenar `EDITOR`/`%`) para
+revisión manual directamente en Excel. Utilidad rapida cuando no se
+necesita el modo de revision interactivo.
 
-- `CONSULTA OSA_..._EDIMUSICA_<fecha>.xlsx` — copia del archivo de la OSA
-  con las columnas `EDITOR`, `%` y `COMENTARIOS` llenas para las obras
-  identificadas con alta confianza.
+Para probar rapido con un subconjunto de filas: `python recon_osa.py --limit 500`
+
+Rutas de archivos personalizadas: `python recon_osa.py --osa "ruta/consulta.xlsx" --db "ruta/obras.xlsx"`
+
+## Archivos que genera
+
+- `..._EDIMUSICA_<fecha>.xlsx` — copia del archivo de la OSA lista para
+  devolver, con `EDITOR`, `%` y `COMENTARIOS` llenos donde corresponde.
 - `log_matching_<fecha>.xlsx` — auditoria fila por fila: score de titulo,
-  score de autor, obra/autor de la base con la que hizo match, y si quedo
-  como `AUTO` o `REVISAR`. Util para ordenar por score y priorizar la
-  revision manual.
-
-Para probar rapido con un subconjunto de filas:
-
-```
-python recon_osa.py --limit 500
-```
-
-Rutas de archivos personalizadas:
-
-```
-python recon_osa.py --osa "ruta/consulta.xlsx" --db "ruta/obras.xlsx"
-```
+  score de autor, obra/autor de la base con la que hizo match, y la
+  decision final (`AUTO`, `CONFIRMADO_MANUAL`, `RECHAZADO_MANUAL`,
+  `PENDIENTE`).
+- `sesiones_revision/<nombre>.json` — progreso de la revision visual para
+  cada archivo de la OSA (no se versiona en git).
 
 ## Logica de decision
 
@@ -65,8 +84,8 @@ python recon_osa.py --osa "ruta/consulta.xlsx" --db "ruta/obras.xlsx"
    OSA coincida (score >= 85, y con margen claro sobre el segundo candidato)
    antes de llenar `EDITOR`/`%` automaticamente. Si el autor de la OSA viene
    "No identificado" o no coincide con confianza, la fila pasa a revision
-   manual con el o los autores sugeridos en `COMENTARIOS`, en vez de
-   asumirlos.
+   (manual en la GUI, o comentario sugerido en la version de consola) en
+   vez de asumirse.
 3. **Obras con varios coautores**: en la base de Edimusica una misma obra
    puede tener varias filas (una por coautor), agrupadas por `COD ANT`. El
    `%` que se llena es la suma de los porcentajes de todos los coautores
@@ -75,10 +94,25 @@ python recon_osa.py --osa "ruta/consulta.xlsx" --db "ruta/obras.xlsx"
    total en cada aparicion — no se modifica ni se reparte el archivo de la
    OSA.
 4. Las filas que ya tenian `EDITOR` o `%` llenos no se tocan.
+5. En la GUI, las filas dudosas que comparten el mismo titulo+autor se
+   revisan una sola vez y la decision se aplica a todas (p. ej. la misma
+   obra reportada para varios interpretes).
 
 ## Ajustar el umbral de revision
 
-Los umbrales estan al inicio de `recon_osa.py` (`AUTHOR_CONFIRM_MIN`,
+Los umbrales estan al inicio de `matching_core.py` (`AUTHOR_CONFIRM_MIN`,
 `AUTHOR_MARGIN_MIN`, `TIER1_FUZZY_TITLE_MIN`, `FUZZY_CANDIDATE_CUTOFF`). Si
 despues de revisar varias corridas ven que ciertos patrones de "REVISAR"
 siempre resultan correctos, se pueden ajustar para automatizarlos.
+
+## Sobre el .exe
+
+Se intento empaquetar `recon_osa_gui.py` como ejecutable standalone con
+PyInstaller (`pip install pyinstaller`, luego
+`pyinstaller --onefile --windowed --name ReconocimientoOSA recon_osa_gui.py`).
+El `.exe` se genera sin problema, pero en este equipo una directiva de
+Control de Aplicaciones de Windows bloquea la ejecucion de binarios nuevos
+sin firmar — no es un error del programa. Mientras eso no se resuelva con
+el area de TI (firmarlo o agregar una excepcion), usar la app via
+`python recon_osa_gui.py` o el `.bat` incluido, que si esta permitido
+porque usa el Python ya instalado y confiado por el sistema.

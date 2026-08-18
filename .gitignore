@@ -9,3 +9,11 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# artefactos de empaquetado (PyInstaller)
+build/
+dist/
+*.spec
+
+# progreso de revision manual de cada corrida (datos de negocio, no codigo)
+sesiones_revision/*.json
