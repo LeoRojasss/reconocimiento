@@ -25,6 +25,7 @@ from tkinter import StringVar, filedialog, messagebox
 
 import customtkinter as ctk
 import openpyxl
+from PIL import Image
 
 import matching_core as mc
 
@@ -38,6 +39,20 @@ def app_dir():
 
 SESSIONS_DIR = app_dir() / "sesiones_revision"
 SESSIONS_DIR.mkdir(exist_ok=True)
+
+ASSETS_DIR = app_dir() / "assets"
+OSA_LOGO_PATH = ASSETS_DIR / "osa_logo.png"
+FUENTES_LOGO_PATH = ASSETS_DIR / "fuentes_logo.jpg"
+
+
+def load_logo(path, height):
+    """Carga un logo manteniendo su proporcion original, escalado a `height` px."""
+    try:
+        img = Image.open(path)
+    except Exception:
+        return None
+    w, h = img.size
+    return ctk.CTkImage(light_image=img, dark_image=img, size=(int(height * w / h), height))
 
 
 def session_path_for(osa_path: Path) -> Path:
@@ -140,6 +155,11 @@ class App(ctk.CTk):
         self._dots_job = None
         self._dots_n = 0
 
+        self.logo_osa_header = load_logo(OSA_LOGO_PATH, 26)
+        self.logo_fuentes_header = load_logo(FUENTES_LOGO_PATH, 40)
+        self.logo_osa_card = load_logo(OSA_LOGO_PATH, 34)
+        self.logo_fuentes_card = load_logo(FUENTES_LOGO_PATH, 48)
+
         self._build_header()
 
         self.content = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
@@ -152,19 +172,31 @@ class App(ctk.CTk):
     # -----------------------------------------------------------------
 
     def _build_header(self):
-        header = ctk.CTkFrame(self, fg_color=PRIMARY, corner_radius=0, height=60)
+        header = ctk.CTkFrame(self, fg_color=PRIMARY, corner_radius=0, height=68)
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
 
-        inner = ctk.CTkFrame(header, fg_color="transparent")
-        inner.pack(side="left", padx=24, pady=8)
-        ctk.CTkLabel(inner, text="🎵", font=(F, 22), text_color="white").pack(side="left", padx=(0, 10))
-        text_col = ctk.CTkFrame(inner, fg_color="transparent")
+        left = ctk.CTkFrame(header, fg_color="transparent")
+        left.pack(side="left", padx=20, pady=10)
+
+        if self.logo_fuentes_header:
+            logo_box = ctk.CTkFrame(left, fg_color="white", corner_radius=9)
+            logo_box.pack(side="left", padx=(0, 12))
+            ctk.CTkLabel(logo_box, text="", image=self.logo_fuentes_header).pack(padx=7, pady=7)
+        else:
+            ctk.CTkLabel(left, text="🎵", font=(F, 22), text_color="white").pack(side="left", padx=(0, 10))
+
+        text_col = ctk.CTkFrame(left, fg_color="transparent")
         text_col.pack(side="left")
         ctk.CTkLabel(text_col, text="Reconocimiento OSA", font=FONT_APP_TITLE,
                      text_color="white", anchor="w").pack(anchor="w")
         ctk.CTkLabel(text_col, text="Catalogo Edimusica", font=FONT_APP_SUB,
                      text_color="#DDD9FF", anchor="w").pack(anchor="w")
+
+        if self.logo_osa_header:
+            right = ctk.CTkFrame(header, fg_color="white", corner_radius=9)
+            right.pack(side="right", padx=20, pady=14)
+            ctk.CTkLabel(right, text="", image=self.logo_osa_header).pack(padx=10, pady=6)
 
     def clear(self):
         self._stop_dots()
@@ -440,7 +472,11 @@ class App(ctk.CTk):
 
         osa_inner = ctk.CTkFrame(osa_box, fg_color="transparent")
         osa_inner.pack(fill="both", expand=True, padx=20, pady=18)
-        badge(osa_inner, "REPORTA LA OSA", "#1D4ED8", "#DBEAFE").pack(anchor="w")
+        osa_head = ctk.CTkFrame(osa_inner, fg_color="transparent")
+        osa_head.pack(anchor="w")
+        if self.logo_osa_card:
+            ctk.CTkLabel(osa_head, text="", image=self.logo_osa_card).pack(side="left", padx=(0, 10))
+        badge(osa_head, "REPORTA LA OSA", "#1D4ED8", "#DBEAFE").pack(side="left")
         self.lbl_osa_titulo = ctk.CTkLabel(osa_inner, font=FONT_CARD_TITLE, text_color=TEXT,
                                             anchor="w", justify="left", wraplength=400)
         self.lbl_osa_titulo.pack(anchor="w", pady=(12, 14))
@@ -456,7 +492,13 @@ class App(ctk.CTk):
 
         bd_inner = ctk.CTkFrame(bd_box, fg_color="transparent")
         bd_inner.pack(fill="both", expand=True, padx=20, pady=18)
-        badge(bd_inner, "BASE EDIMUSICA", PRIMARY, PRIMARY_LIGHT).pack(anchor="w")
+        bd_head = ctk.CTkFrame(bd_inner, fg_color="transparent")
+        bd_head.pack(anchor="w")
+        if self.logo_fuentes_card:
+            logo_box = ctk.CTkFrame(bd_head, fg_color=CARD, corner_radius=8, border_width=1, border_color=BORDER)
+            logo_box.pack(side="left", padx=(0, 10))
+            ctk.CTkLabel(logo_box, text="", image=self.logo_fuentes_card).pack(padx=4, pady=4)
+        badge(bd_head, "BASE EDIMUSICA", PRIMARY, PRIMARY_LIGHT).pack(side="left")
         self.lbl_bd_titulo = ctk.CTkLabel(bd_inner, font=FONT_CARD_TITLE, text_color=TEXT,
                                            anchor="w", justify="left", wraplength=400)
         self.lbl_bd_titulo.pack(anchor="w", pady=(12, 14))
